@@ -1,35 +1,40 @@
 # ci-templates
 
-Переиспользуемые шаблоны GitLab CI.
+Переиспользуемые workflow GitHub Actions.
 
-## templates/java-maven-docker.gitlab-ci.yml
+## .github/workflows/java-maven-docker.yml
 
-Базовый пайплайн для Maven-приложения с Dockerfile:
+Reusable workflow (`on: workflow_call`) для Maven-приложения с Dockerfile:
 
 ```
 build ──┐
-        ├──> package (Kaniko -> $CI_REGISTRY_IMAGE)
+        ├──> package (docker build + push в ghcr.io/<owner>/<repo>)
 test  ──┘
 ```
 
 ### Подключение
 
 ```yaml
-include:
-  - project: "$CI_PROJECT_NAMESPACE/ci-templates"
-    ref: main
-    file: "/templates/java-maven-docker.gitlab-ci.yml"
+jobs:
+  ci:
+    uses: PavlovaAlexandra/ci-templates/.github/workflows/java-maven-docker.yml@main
+    permissions:
+      contents: read
+      packages: write
 ```
 
-### Переменные (можно переопределить в проекте)
+### Входные параметры
 
-| Переменная | По умолчанию |
-|---|---|
-| `MAVEN_IMAGE` | `maven:3.9-eclipse-temurin-21` |
-| `KANIKO_IMAGE` | `gcr.io/kaniko-project/executor:v1.23.2-debug` |
-| `DOCKERFILE_PATH` | `Dockerfile` |
-| `IMAGE_NAME` | `$CI_REGISTRY_IMAGE` |
-| `IMAGE_TAG` | `$CI_COMMIT_SHORT_SHA` |
-| `KANIKO_EXTRA_ARGS` | пусто (например `--insecure` для HTTP-registry) |
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `runner` | `ubuntu-latest` | `self-hosted` для своего раннера |
+| `java-version` | `21` | |
+| `working-directory` | `.` | каталог с pom.xml и Dockerfile |
+| `push-image` | `true` | `false`: только собрать образ |
 
-Требования к проекту: сборка кладёт jar в `target/`, Dockerfile копирует его оттуда.
+Требования к проекту: Maven Wrapper (`./mvnw`) в репозитории, jar собирается в `target/`, Dockerfile копирует его оттуда.
+
+### Доступ из приватного репозитория
+
+Если `ci-templates` приватный: Settings → Actions → General → Access →
+"Accessible from repositories owned by the user".
