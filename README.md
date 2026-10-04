@@ -1,9 +1,35 @@
-# training-config
+# ci-templates
 
-Desired state of the thesis lab (GitOps configuration repository).
+Переиспользуемые шаблоны GitLab CI.
 
-- `charts/projectfortrainingbe-chart` is the Helm chart. The `image.tag` line in `values.yaml` is updated by the `update_config` stage of the pipeline in `training-app`.
-- `clusters/lab/apps` holds the Flux objects (GitRepository and HelmRelease).
-- `clusters/lab/flux-system` appears after `flux bootstrap`.
+## templates/java-maven-docker.gitlab-ci.yml
 
-Replace every `CHANGE_ME_GL_USER` with your GitLab username before the first push.
+Базовый пайплайн для Maven-приложения с Dockerfile:
+
+```
+build ──┐
+        ├──> package (Kaniko -> $CI_REGISTRY_IMAGE)
+test  ──┘
+```
+
+### Подключение
+
+```yaml
+include:
+  - project: "$CI_PROJECT_NAMESPACE/ci-templates"
+    ref: main
+    file: "/templates/java-maven-docker.gitlab-ci.yml"
+```
+
+### Переменные (можно переопределить в проекте)
+
+| Переменная | По умолчанию |
+|---|---|
+| `MAVEN_IMAGE` | `maven:3.9-eclipse-temurin-21` |
+| `KANIKO_IMAGE` | `gcr.io/kaniko-project/executor:v1.23.2-debug` |
+| `DOCKERFILE_PATH` | `Dockerfile` |
+| `IMAGE_NAME` | `$CI_REGISTRY_IMAGE` |
+| `IMAGE_TAG` | `$CI_COMMIT_SHORT_SHA` |
+| `KANIKO_EXTRA_ARGS` | пусто (например `--insecure` для HTTP-registry) |
+
+Требования к проекту: сборка кладёт jar в `target/`, Dockerfile копирует его оттуда.

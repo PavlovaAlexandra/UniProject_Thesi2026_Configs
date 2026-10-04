@@ -1,0 +1,84 @@
+# =============================================================================
+# Базовый шаблон CI для Java (Maven) приложения с упаковкой в Docker-образ.
+#
+# Подключение в репозитории приложения (.gitlab-ci.yml):
+#
+#   include:
+#     - project: "$CI_PROJECT_NAMESPACE/ci-templates"
+#       ref: main
+#       file: "/templates/java-maven-docker.gitlab-ci.yml"
+#
+# Стадии:  build -> test -> package
+#   build    : mvn package без тестов, jar передаётся дальше как artifact
+#   test     : mvn test, JUnit-отчёт публикуется в GitLab
+#   package  : Kaniko собирает образ из Dockerfile и пушит в Container Registry
+# =============================================================================
+
+stages:
+  - build
+  - test
+  - package
+
+variables:
+  # Переопределяемые параметры шаблона
+  MAVEN_IMAGE: "maven:3.9-eclipse-temurin-21"
+  KANIKO_IMAGE: "gcr.io/kaniko-project/executor:v1.23.2-debug"
+  DOCKERFILE_PATH: "Dockerfile"
+  IMAGE_NAME: "$CI_REGISTRY_IMAGE"
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+  KANIKO_EXTRA_ARGS: ""
+  # Локальный Maven-репозиторий внутри каталога проекта, чтобы его можно было кэшировать
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --show-version --no-transfer-progress"
+
+.maven:
+  image: $MAVEN_IMAGE
+  cache:
+    key: "maven-$CI_PROJECT_ID"
+    paths:
+      - .m2/repository/
+
+build:
+  extends: .maven
+  stage: build
+  script:
+    - mvn $MAVEN_CLI_OPTS package -DskipTests
+  artifacts:
+    paths:
+      - target/*.jar
+    expire_in: 1 day
+
+test:
+  extends: .maven
+  stage: test
+  needs: []
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+
+package:
+  stage: package
+  image:
+    name: $KANIKO_IMAGE
+    entrypoint: [""]
+  needs:
+    - job: build
+      artifacts: true
+    - job: test
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      AUTH=$(printf "%s:%s" "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+      echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$AUTH\"}}}" > /kaniko/.docker/config.json
+    - echo "Building ${IMAGE_NAME}:${IMAGE_TAG}"
+    - >-
+      /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --dockerfile "$CI_PROJECT_DIR/$DOCKERFILE_PATH"
+      --destination "${IMAGE_NAME}:${IMAGE_TAG}"
+      --destination "${IMAGE_NAME}:latest"
+      $KANIKO_EXTRA_ARGS
